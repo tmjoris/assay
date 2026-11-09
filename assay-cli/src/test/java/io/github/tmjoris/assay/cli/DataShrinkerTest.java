@@ -35,6 +35,21 @@ class DataShrinkerTest {
     }
 
     @Test
+    void errorReasonIgnoresTheQueryAroundIt() {
+        String a = "Exception: VeloxUserError\nReason: padString must not be empty\nContext: lpad(n0)";
+        String b = "Exception: VeloxUserError\nReason: padString must not be empty\nContext: try_cast(x)";
+        assertEquals(Fuzzer.errorReason(a), Fuzzer.errorReason(b));
+        assertEquals("plain error", Fuzzer.errorReason("plain error\nmore"));
+    }
+
+    @Test
+    void outputAliasesDoNotSplitAFinding() {
+        assertEquals(
+                Fuzzer.normalize("SELECT CAST(a0.d AS STRING) AS c3 FROM assay.d.t1 a0"),
+                Fuzzer.normalize("SELECT CAST(a0.d AS STRING) AS c0 FROM assay.d.t0 a0"));
+    }
+
+    @Test
     void normalizationCollapsesLiteralsAndAliases() {
         assertEquals(
                 Fuzzer.normalize("SELECT abs(a1.k) AS c0 FROM assay.d.t0 a1 WHERE a1.s = 'x' AND a1.k = 5"),

@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Generates queries, runs them on every engine, and turns each difference into a small report. */
@@ -46,6 +47,7 @@ final class Fuzzer {
     }
 
     private static final Pattern TABLE = Pattern.compile("assay\\.d\\.(t\\d)");
+    private static final Pattern REASON = Pattern.compile("Reason: (.*)");
     private static final Duration SETUP_TIMEOUT = Duration.ofMinutes(3);
 
     /** A difference must recur this many more times before it is treated as a finding. */
@@ -139,6 +141,11 @@ final class Fuzzer {
                 return;
             }
         }
+        String errorSignature = errorSignature(engine, first);
+        if (errorSignature != null && findings.containsKey(errorSignature)) {
+            findings.merge(errorSignature, 1, Integer::sum);
+            return;
+        }
         if (shrinks >= config.maxShrinks()) {
             Files.writeString(
                     config.out().resolve("unshrunk.txt"),
@@ -152,7 +159,7 @@ final class Fuzzer {
                 new Shrinker(config.shrinkBudget())
                         .shrink(original, q -> oracle.check(engine, q.sql(), q.ordered()).kind() == first.kind());
         Query q = small.query();
-        String signature = engine.engine + ":" + first.kind() + ":" + normalize(q.sql());
+        String signature = errorSignature != null ? errorSignature : engine.engine + ":" + first.kind() + ":" + normalize(q.sql());
         int seen = findings.merge(signature, 1, Integer::sum);
         if (seen > 1) {
             return;
@@ -266,10 +273,22 @@ final class Fuzzer {
         return TABLE.matcher(sql).results().map(m -> m.group(1)).distinct().toList();
     }
 
+    /** An engine error names its own cause, so one reason is one bug however the query looks. */
+    private static String errorSignature(EngineProcess engine, Verdict v) {
+        return v.kind() == Kind.ERROR_DIVERGENCE ? engine.engine + ":" + v.kind() + ":" + errorReason(v.detail()) : null;
+    }
+
+    static String errorReason(String detail) {
+        Matcher reason = REASON.matcher(detail);
+        String text = reason.find() ? reason.group(1) : detail.lines().findFirst().orElse("");
+        return text.substring(0, Math.min(text.length(), 160));
+    }
+
     /** Collapses literals, aliases and tables so reshuffled variants of one bug count once. */
     static String normalize(String sql) {
         return sql.replaceAll("'(?:[^'\\\\]|\\\\.)*'", "S")
                 .replaceAll("\\ba\\d+\\b", "A")
+                .replaceAll("\\bc\\d+\\b", "C")
                 .replaceAll("assay\\.\\w+\\.t\\d", "T")
                 .replaceAll("-?\\b\\d+(\\.\\d+)?(E-?\\d+)?\\b", "N");
     }
@@ -312,7 +331,8 @@ final class Fuzzer {
     private static void appendResult(StringBuilder b, String name, Path arrow, Reply reply) throws IOException {
         b.append("## ").append(name).append(" result\n\n");
         if (reply == null || !reply.ok()) {
-            b.append("```\n").append(reply == null ? "(not run)" : reply.status() + ": " + reply.error()).append("\n```\n\n");
+            String text = reply == null ? "(not run)" : reply.status() + ": " + reply.error();
+            b.append("```\n").append(text.lines().limit(12).collect(java.util.stream.Collectors.joining("\n"))).append("\n```\n\n");
             return;
         }
         ResultSet rs = ResultSet.read(arrow);
