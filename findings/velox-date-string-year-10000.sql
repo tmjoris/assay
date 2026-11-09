@@ -1,0 +1,5 @@
+-- Run on a Spark catalog named `assay`.
+CREATE NAMESPACE IF NOT EXISTS assay.repro;
+CREATE TABLE assay.repro.t0 (rid BIGINT, k INT, l BIGINT, d DOUBLE, m DECIMAL(18,4), w DECIMAL(38,10), s STRING, dt DATE, ts TIMESTAMP, b BOOLEAN) USING iceberg;
+INSERT INTO assay.repro.t0 VALUES (76, 8, CAST(2 AS BIGINT), CAST(0.0 AS DOUBLE), CAST(NULL AS DECIMAL(18,4)), CAST(0.0000000000 AS DECIMAL(38,10)), '日本語', DATE '9999-12-31', TIMESTAMP '2024-01-01 06:30:00', FALSE);
+SELECT CAST(add_months(a0.dt, pmod(9, 400)) AS STRING) AS c0 FROM assay.repro.t0 a0;

@@ -173,7 +173,7 @@ final class Fuzzer {
         Files.writeString(dir.resolve("repro.sql"), repro);
         keepResult(oracle.resultFile("reference"), dir.resolve("reference.arrow"));
         keepResult(oracle.resultFile(engine.engine), dir.resolve(engine.engine + ".arrow"));
-        Files.writeString(dir.resolve("report.md"), report(engine, first.kind(), original, rows, finalVerdict, small, index, dir));
+        Files.writeString(dir.resolve("report.md"), report(engine, first, original, rows, finalVerdict, index, dir));
         System.out.printf("finding %s after %d shrink tests: %s%n", id, small.tests(), q.sql());
     }
 
@@ -310,14 +310,15 @@ final class Fuzzer {
         return b.toString();
     }
 
-    private String report(EngineProcess engine, Kind kind, Query original, RowShrink rows, Verdict v, Shrinker.Result small, int index, Path dir) throws IOException {
+    private String report(EngineProcess engine, Verdict first, Query original, RowShrink rows, Verdict v, int index, Path dir) throws IOException {
+        Kind kind = first.kind();
         StringBuilder b = new StringBuilder();
         int rowCount = rows.kept().values().stream().mapToInt(List::size).sum();
         b.append("# ").append(engine.engine).append(" vs spark: ").append(kind).append("\n\n");
         b.append("- Seed ").append(config.seed()).append(", query ").append(index).append("\n");
         b.append("- Reproduced from a clean copy of the shrunk data: ").append(v.kind() == kind ? "yes" : "NO (got " + v.kind() + ")").append("\n");
         b.append("- Data: ").append(rowCount).append(" rows after shrinking\n");
-        b.append("- Detail: ").append(v.detail().isEmpty() ? "(none)" : v.detail()).append("\n\n");
+        b.append("- First seen as: ").append(first.detail().lines().limit(6).collect(java.util.stream.Collectors.joining(" / "))).append("\n\n");
         b.append("## Shrunk query\n\n```sql\n").append(rows.sql()).append("\n```\n\n");
         appendResult(b, "spark", dir.resolve("reference.arrow"), v.reference());
         appendResult(b, engine.engine, dir.resolve(engine.engine + ".arrow"), v.tested());

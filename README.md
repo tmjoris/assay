@@ -18,26 +18,30 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 
 | Engine | Finding | Effect | Upstream status |
 |---|---|---|---|
-| Velox | `round(double, 0)` changes large values, and the largest double becomes `Infinity` | A filter on the rounded value dropped 4 of 5 rows | Known in part: [velox#19422](https://github.com/facebookincubator/velox/pull/19422) is open |
 | Velox | `lpad` and `rpad` with an empty padding string | The whole query fails where Spark returns a value | No report found |
+| Velox | `upper` and `initcap` on `ß` | Returns `ẞ` where Spark returns `SS`, so a group or join on the result differs | No report found |
+| Velox | `round(double, 0)` changes large values, and the largest double becomes `Infinity` | A filter on the rounded value dropped 4 of 5 rows | Known in part: [velox#19422](https://github.com/facebookincubator/velox/pull/19422) is open |
+| Velox | `second()` and `date_trunc('MINUTE')` in a time zone with a sub-minute offset | Wrong for historic timestamps, such as New York before 1883 | No report found |
+| Velox | `CAST(date AS STRING)` after year 9999 | Prints `10000-09-30` where Spark prints `+10000-09-30` | No report found |
 | Velox | `CAST(double AS STRING)` on the smallest double | Prints `4.9406564584124654E-324` where Spark prints `4.9E-324` | No report found |
+| Velox and Comet | `cbrt` differs from Spark in the last bits | Velox returns `3.0000000000000004` for `cbrt(27.0)`. Comet differs by one bit on `cbrt(2.5)`, visible through `hash` | Comet: known, [comet#6797](https://github.com/apache/datafusion-comet/issues/6797) |
 
-Comet had no differences in these runs.
+Across all three runs below, Comet's only difference was the `cbrt` one.
 
-A 600-query run on a 4-core laptop (seed 2, 100 rows per table) took 27 minutes:
-
-| Engine | Queries compared | At least one native operator | Fully native | Differences |
+| Run | Queries compared | Comet: any native / fully native | Velox: any native / fully native | Differences: control, Comet, Velox |
 |---|---|---|---|---|
-| Spark, interpreted (control) | 536 | n/a | n/a | 0 |
-| Comet | 536 | 506 | 216 | 0 |
-| Velox | 536 | 456 | 200 | 5 reports, 2 root causes |
+| Seed 1, UTC | 86 | 83 / 45 | 75 / 44 | 0, 0, 1 |
+| Seed 2, UTC | 536 | 506 / 216 | 456 / 200 | 0, 0, 5 |
+| Seed 3, America/New_York | 361 | 345 / 165 | 320 / 156 | 0, 1, 18 |
+| Total | 983 | 934 / 426 | 851 / 400 | 0, 1, 24 |
 
-Spark itself rejected the other 64 queries, which says nothing about any engine. The 5 reports
-came from an earlier build that split one bug into several findings. The round bug appeared in
-a separate 100-query run on seed 1.
+Spark itself rejected the other queries in each run, which says nothing about any engine. A
+difference is counted each time a query shows one, so the 24 from Velox reduce to the six Velox
+causes above, along with one more that did not reproduce on replay and is not claimed as a bug.
+Seed 2 took 27 minutes on a 4-core laptop.
 
-A clean run shows only that these queries found no difference. Less than half of them ran fully
-natively on either engine, and the rest mixed native and JVM operators.
+A clean result shows only that these queries found no difference. Less than half of them ran
+fully natively on either engine, and the rest mixed native and JVM operators.
 
 ## How it works
 
@@ -104,6 +108,8 @@ release checksum.
 
 # Replay a reproduction on each engine, side by side.
 ./gradlew :assay-cli:run --args="check --out runs/replay --file findings/velox-lpad-empty-pad.sql"
+
+# Add --tz ZONE to either command to run in another session time zone.
 ```
 
 Each finding gets a directory under `runs/<name>/findings` holding `report.md`, `repro.sql` and
