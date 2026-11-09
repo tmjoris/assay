@@ -1,3 +1,4 @@
+-- expect-differs: velox
 -- Run on a Spark catalog named `assay`.
 CREATE NAMESPACE IF NOT EXISTS assay.repro;
 CREATE TABLE assay.repro.t3 (rid BIGINT, k INT, l BIGINT, d DOUBLE, m DECIMAL(18,4), w DECIMAL(38,10), s STRING, dt DATE, ts TIMESTAMP, b BOOLEAN) USING iceberg;

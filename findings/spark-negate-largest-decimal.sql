@@ -1,0 +1,5 @@
+-- expect-differs: comet,velox
+CREATE NAMESPACE IF NOT EXISTS assay.repro;
+CREATE TABLE assay.repro.t (w DECIMAL(38,10)) USING iceberg;
+INSERT INTO assay.repro.t VALUES (CAST(9999999999999999999999999999.9999999999 AS DECIMAL(38,10)));
+SELECT CAST((- w) AS DECIMAL(38,10)) FROM assay.repro.t;

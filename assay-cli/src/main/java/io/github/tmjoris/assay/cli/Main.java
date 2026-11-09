@@ -13,15 +13,15 @@ public final class Main {
 
     private static final String USAGE =
             """
-            usage: assay check --out DIR --file SCRIPT.sql [--engines a,b] [--tz ZONE]
+            usage: assay check --out DIR --file SCRIPT.sql [--engines a,b] [--tz ZONE] [--warehouse DIR]
                    assay --out DIR [--seed N] [--queries N] [--rows N] [--engines a,b]
-                         [--tz ZONE] [--shrink-budget N] [--max-shrinks N]
+                         [--tz ZONE] [--shrink-budget N] [--max-shrinks N] [--start N] [--parallel N]
                          [--classpaths DIR]
             """;
 
     private Main() {}
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         boolean check = args.length > 0 && args[0].equals("check");
         Map<String, String> opts = parse(check ? Arrays.copyOfRange(args, 1, args.length) : args);
         if (!opts.containsKey("out")) {
@@ -37,8 +37,7 @@ public final class Main {
         List<String> engines = Arrays.asList(opts.getOrDefault("engines", "comet,velox").split(","));
         Path classpaths = Path.of(opts.getOrDefault("classpaths", "assay-worker/build/classpaths"));
         if (check) {
-            Check.run(Path.of(opts.get("file")), engines, out, classpaths, opts.getOrDefault("tz", "UTC"));
-            return;
+            System.exit(Check.run(Path.of(opts.get("file")), engines, out, classpaths, opts.getOrDefault("tz", "UTC"), opts.containsKey("warehouse") ? Path.of(opts.get("warehouse")) : null));
         }
         new Fuzzer(
                         new Fuzzer.Config(
@@ -50,7 +49,9 @@ public final class Main {
                                 classpaths,
                                 opts.getOrDefault("tz", "UTC"),
                                 Integer.parseInt(opts.getOrDefault("shrink-budget", "200")),
-                                Integer.parseInt(opts.getOrDefault("max-shrinks", "30"))))
+                                Integer.parseInt(opts.getOrDefault("max-shrinks", "30")),
+                                Integer.parseInt(opts.getOrDefault("start", "0")),
+                                Integer.parseInt(opts.getOrDefault("parallel", "1"))))
                 .run();
     }
 

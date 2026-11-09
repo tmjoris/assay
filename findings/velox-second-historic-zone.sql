@@ -1,4 +1,5 @@
--- Needs a session time zone with a sub-minute offset: run with --tz America/New_York.
+-- tz: America/New_York
+-- expect-differs: velox
 -- Run on a Spark catalog named `assay`.
 CREATE NAMESPACE IF NOT EXISTS assay.repro;
 CREATE TABLE assay.repro.t0 (rid BIGINT, k INT, l BIGINT, d DOUBLE, m DECIMAL(18,4), w DECIMAL(38,10), s STRING, dt DATE, ts TIMESTAMP, b BOOLEAN) USING iceberg;

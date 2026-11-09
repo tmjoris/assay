@@ -1,3 +1,4 @@
+-- expect-differs: comet
 -- Run on a Spark catalog named `assay`.
 CREATE NAMESPACE IF NOT EXISTS assay.repro;
 CREATE TABLE assay.repro.t (b BOOLEAN, d DOUBLE) USING iceberg;
