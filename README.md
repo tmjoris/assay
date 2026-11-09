@@ -36,8 +36,9 @@ Across all three runs below, Comet's only difference was the `cbrt` one.
 | Total | 983 | 934 / 426 | 851 / 400 | 0, 1, 24 |
 
 Spark itself rejected the other queries in each run, which says nothing about any engine. A
-difference is counted each time a query shows one, so the 24 from Velox reduce to the six Velox
-causes above, along with one more that did not reproduce on replay and is not claimed as a bug.
+difference is counted each time a query shows one, so the 24 from Velox reduce to the seven
+causes above that involve Velox, along with one more that did not reproduce on replay and is not
+claimed as a bug.
 Seed 2 took 27 minutes on a 4-core laptop.
 
 A clean result shows only that these queries found no difference. Less than half of them ran
