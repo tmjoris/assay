@@ -190,18 +190,49 @@ such as `s LIKE p`:
 `StringUtils.escapeLikeRegex` walks the pattern one UTF-16 unit at a time and quotes each unit
 alone, which splits an emoji's surrogate pair. A fix was proposed upstream as SPARK-55453.
 
-## Not confirmed
+## Velox: filters lose rows when a Parquet file holds NaN
 
-These appeared in runs but are not counted as bugs.
+Reproduction: [velox-nan-statistics-lost-rows.sql](findings/velox-nan-statistics-lost-rows.sql)
 
-Velox lost rows in two queries on GitHub Actions. `WHERE a0.d > CAST(0.0 AS DOUBLE)` returned no
-rows where Spark returned 2, on data with one NaN and one `5.25`. An `IN` subquery with a `BETWEEN`
-on a NaN-holding column returned nothing where Spark returned 11, because adaptive execution saw
-an empty build side. Neither reproduced on a laptop, including with a NaN as the first row of the
-file, so the cause is unknown.
+| Rows written | Query | Spark | Comet | Velox |
+|---|---|---|---|---|
+| `NaN`, `5.25` in one file | `d > 0.0` | both rows | both rows | **no rows** |
+| `NaN`, `5.25` in one file | `d BETWEEN 2.5 AND 9.0` | `5.25` | `5.25` | **no rows** |
+| `NaN`, `5.25` in one file | `d = 5.25` | `5.25` | `5.25` | `5.25` |
+| `1.0`, `5.25` in one file | `d > 0.0` | both rows | both rows | both rows |
+| `NaN` and `5.25` in separate files | `d > 0.0` | `5.25` | `5.25` | `5.25` |
 
-Spark in interpreted mode raised `NUMERIC_VALUE_OUT_OF_RANGE` on seed 7, New York, on a query that
-compiled Spark answered.
+The file's Parquet footer records `min = 5.25, max = NaN` for the column. The losses match Velox
+skipping a row group by comparing the filter with that maximum, though the code path has not been
+confirmed. It returned a wrong answer on an ordinary filter with no error, so it is the most
+serious finding here. It first looked like a CI-only failure, because hand-written `VALUES` inserts
+split the rows across two files.
 
-Comet returned a timestamp one hour different from Spark for `CAST(date AS TIMESTAMP)` after year
-9999 in New York. It has not been replayed or checked against the time zone rules.
+## Comet: `CAST(date AS TIMESTAMP)` in the far future
+
+Reproduction: [comet-date-to-timestamp-far-future.sql](findings/comet-date-to-timestamp-far-future.sql)
+
+| Date in `America/New_York` | Spark and Velox, in UTC | Comet, in UTC |
+|---|---|---|
+| `2038-07-01` | `04:00` | `04:00` |
+| `2100-07-01` | `04:00` | `05:00` |
+| `9999-07-01` | `04:00` | `05:00` |
+
+Java's time zone rules keep applying daylight saving time to future years, giving an offset of
+`-04:00` for all of these. Comet stops applying it somewhere between 2038 and 2100.
+
+## Spark and Iceberg: a NaN filter depends on file layout
+
+Reproduction: [iceberg-nan-file-layout.sql](findings/iceberg-nan-file-layout.sql)
+
+The same two rows give different answers to `d > 0.0` on Spark, depending on how they were written.
+In one file, the NaN row is returned, as Spark's ordering of NaN as the largest value requires. In
+separate files it is not, because the scan skips the file that holds only NaN.
+
+## Spark: negating the largest decimal raises an error
+
+Reproduction: [spark-negate-largest-decimal.sql](findings/spark-negate-largest-decimal.sql)
+
+`CAST((- w) AS DECIMAL(38,10))` on `9999999999999999999999999999.9999999999` raises
+`NUMERIC_VALUE_OUT_OF_RANGE` on Spark with ANSI mode off, and the negated value fits the type. Comet
+and Velox return `-9999999999999999999999999999.9999999999`.

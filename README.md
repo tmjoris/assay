@@ -1,6 +1,6 @@
 # Assay
 
-Assay checks whether a native query engine gives the same answers as Apache Spark.
+Assay checks whether a faster query engine gives the same answers as Apache Spark.
 
 Companies switch on [Apache Comet](https://datafusion.apache.org/comet/) or
 [Velox](https://velox-lib.io/) (through [Apache Gluten](https://gluten.apache.org/)) to cut
@@ -8,8 +8,52 @@ Spark's compute bill. Both replace Spark's JVM operators with native code and pr
 results. When one of them rounds a number differently or mishandles a null, the query still
 succeeds and a report is quietly wrong.
 
-Assay generates random SQL over Apache Iceberg tables, runs each query on every engine, compares
-the results exactly as Apache Arrow data, and shrinks each difference to a small reproduction.
+## What it does
+
+- Generates random SQL over [Apache Iceberg](https://iceberg.apache.org/) tables full of awkward
+  values: nulls, NaN, huge decimals, emoji and extreme dates.
+- Runs each query on Spark, Comet and Velox, and compares the answers exactly as
+  [Apache Arrow](https://arrow.apache.org/) data.
+- Shrinks every difference down to a small query and a few rows, and writes a report with a
+  script that reproduces it.
+- Runs queries concurrently across as many sets of engines as you ask for. Two sets finished the
+  same 100 queries in 452 seconds instead of 805, with identical results.
+
+## Try it
+
+You need Java 21. The build fetches everything else, including the engines.
+
+```sh
+./gradlew build
+./gradlew -q :assay-cli:run --args="check --out runs/replay --file findings/comet-nullif-filter.sql"
+```
+
+`check` replays a recorded bug on every engine and prints each answer side by side. Here Comet's
+filter loses the row with `2.5`, so its `stddev_pop` is `0.0` where Spark and Velox return `3.5`:
+
+![Replaying a recorded finding](docs/images/check.png)
+
+Every file in [findings/](findings) is a reproduction you can replay the same way. CI replays them
+all and fails if a recorded bug stops reproducing.
+
+## Look for new bugs
+
+```sh
+./gradlew -q :assay-cli:run --args="--out runs/demo --seed 1 --queries 150 --parallel 2 \
+  --engines spark-interpreted,comet,velox --max-shrinks 3 --shrink-budget 40"
+```
+
+`spark-interpreted` is a control: Spark checked against itself, which catches mistakes in the
+generator. The same seed generates the same queries and data. Each lane in `--parallel` runs its
+own set of JVMs, so memory is the limit.
+
+![A fuzz run](docs/images/fuzz.png)
+
+Each finding gets a directory under `runs/<name>/findings` with `report.md`, a `repro.sql` and the
+Arrow results from both engines. `results.tsv` records the outcome of every query, and
+`summary.json` has the counts.
+
+![A finding report](docs/images/report.png)
 
 ## What it has found
 
@@ -18,6 +62,7 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 
 | Engine | Finding | Effect | Upstream status |
 |---|---|---|---|
+| Velox | Filtering a double column in a Parquet file that also holds NaN | Loses every row in the row group: `d > 0.0` returned nothing where the file holds `5.25` | No report found |
 | Comet | `WHERE nullif(TRUE, b)` when `b` is NULL | Silently drops the row, though the same expression selected as a column returns `true`. `stddev_pop` over the filter returned 0.0 where Spark returned 3.5 | No report found |
 | Velox | `lpad` and `rpad` with an empty padding string | The whole query fails where Spark returns a value | No report found |
 | Velox | `upper` and `initcap` on `ß` | Returns `ẞ` where Spark returns `SS`, so a group or join on the result differs | No report found |
@@ -30,6 +75,9 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 | Velox | `CAST(double AS DECIMAL)` on large values | Returns `-9223372036854775808` where Spark returns `-9223372036854776000` | No report found |
 | Comet | `lpad` with a NULL padding value | The whole query fails where Spark returns a value | Related open work: [comet#7450](https://github.com/apache/datafusion-comet/pull/7450), [comet#7452](https://github.com/apache/datafusion-comet/issues/7452) |
 | Velox and Comet | Math functions such as `cbrt` differ from Spark in the last bits | Velox returns `3.0000000000000004` for `cbrt(27.0)`. Comet differs by one bit on `cbrt(2.5)`. Later steps such as `hash`, `%` or `cos` turn that into a visibly different answer | Comet: known, [comet#6797](https://github.com/apache/datafusion-comet/issues/6797) |
+| Comet | `CAST(date AS TIMESTAMP)` in a daylight-saving zone | From 2100 onward it is one hour off in New York summer time. 2038 is still correct | No report found |
+| Spark, on every engine | `d > 0.0` on NaN depends on how the table was written | The NaN row is returned when both rows share a file and dropped when they do not | No report found |
+| Spark | Negating the largest `DECIMAL(38,10)` | Raises an error where Comet and Velox return the value | No report found |
 | Spark | `LIKE` with a non-literal pattern containing an emoji | `'🦀' LIKE p` is false where `p` is `'🦀'`. Comet and Velox are correct | Fix proposed upstream as SPARK-55453; Spark 4.0.2 still shows it |
 
 | Run | Queries compared | Comet: any native / fully native | Velox: any native / fully native | Differences: control, Comet, Velox |
@@ -50,8 +98,8 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 The 2 control differences on the first seed 5 run were a generator mistake: a `SUM` of decimals
 near the type's limit overflows or not depending on row order. Arguments to decimal sums and
 averages are now bounded, as double aggregates already were, and the rerun of that seed was clean.
-The 1 control difference on seed 7 is unexplained: Spark in interpreted mode raised a decimal range
-error on a query that compiled Spark answered.
+The 1 control difference on seed 7 is the decimal negation error above: Spark raises it in either
+mode when it evaluates that expression, and only one mode reached it for that query.
 
 Spark rejected the other generated queries, which says nothing about any engine. A difference is
 counted each time a query shows one, so the counts reduce to the causes above. Reports that did

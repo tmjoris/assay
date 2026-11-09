@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     implementation(project(":assay-core"))
+    runtimeOnly("org.slf4j:slf4j-nop:2.0.16")
     testRuntimeOnly("org.slf4j:slf4j-nop:2.0.16")
 }
 

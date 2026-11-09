@@ -37,7 +37,7 @@ jobs:
           ./gradlew -q :assay-cli:run
           --args="--out runs/fuzz --seed ${{ matrix.seed }} --queries ${{ inputs.queries }}
           --rows ${{ inputs.rows }} --tz ${{ inputs.tz }}
-          --engines spark-interpreted,comet,velox --shrink-budget 80 --max-shrinks 25"
+          --engines spark-interpreted,comet,velox --parallel 2 --shrink-budget 80 --max-shrinks 25"
       - name: Summarize
         if: always()
         run: |
