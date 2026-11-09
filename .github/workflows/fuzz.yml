@@ -1,0 +1,53 @@
+name: Fuzz
+
+on:
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: JSON list of seeds
+        default: "[3, 4, 5]"
+      queries:
+        default: "600"
+      rows:
+        default: "100"
+      tz:
+        description: Session time zone
+        default: UTC
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ${{ fromJSON(inputs.seeds) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Fuzz
+        run: >-
+          ./gradlew -q :assay-cli:run
+          --args="--out runs/fuzz --seed ${{ matrix.seed }} --queries ${{ inputs.queries }}
+          --rows ${{ inputs.rows }} --tz ${{ inputs.tz }}
+          --engines spark-interpreted,comet,velox --shrink-budget 80 --max-shrinks 25"
+      - name: Summarize
+        if: always()
+        run: |
+          { echo '```json'; cat runs/fuzz/summary.json || true; echo '```'; ls runs/fuzz/findings || true; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-${{ matrix.seed }}-${{ inputs.tz }}
+          path: |
+            runs/fuzz/summary.json
+            runs/fuzz/unshrunk.txt
+            runs/fuzz/findings
+            runs/fuzz/logs
