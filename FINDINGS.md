@@ -7,6 +7,22 @@ checking what Spark's source or documentation says the answer should be. Each `.
 Versions tested: Spark 4.0.2, Iceberg 1.11.0, Comet 1.2.0, Gluten 1.7.0 with Velox revision
 `5b248e83`.
 
+## Comet: a filter on `nullif` drops rows when the second argument is NULL
+
+Reproduction: [comet-nullif-filter.sql](findings/comet-nullif-filter.sql)
+
+`nullif(TRUE, NULL)` is `TRUE`, because `TRUE = NULL` is not true. All three engines agree when the
+expression is selected as a column, and Comet disagrees once it is a filter:
+
+| Query | Spark and Velox | Comet |
+|---|---|---|
+| `SELECT d, nullif(TRUE, b)`, row with NULL `b` | `2.5, true` | `2.5, true` |
+| `WHERE nullif(TRUE, b)` | rows `2.5` and `9.5` | row `9.5` only |
+| `stddev_pop(d)` over that filter | `3.5` | `0.0` |
+
+The query succeeds and returns a wrong answer, which makes this the most serious kind of finding
+here. A search of Comet issues found no report of it. A search can miss one.
+
 ## Velox: `lpad` and `rpad` fail on an empty padding string
 
 Reproduction: [velox-lpad-empty-pad.sql](findings/velox-lpad-empty-pad.sql)
@@ -176,14 +192,16 @@ alone, which splits an emoji's surrogate pair. A fix was proposed upstream as SP
 
 ## Not confirmed
 
-On GitHub Actions, seed 3, this query returned no rows on Velox where Spark returned 11:
+These appeared in runs but are not counted as bugs.
 
-```sql
-SELECT a0.b FROM t0 a0
-WHERE a0.m IN (SELECT a1.m FROM t3 a1 WHERE a1.d BETWEEN CAST(2.5 AS DOUBLE) AND a1.d)
-```
+Velox lost rows in two queries on GitHub Actions. `WHERE a0.d > CAST(0.0 AS DOUBLE)` returned no
+rows where Spark returned 2, on data with one NaN and one `5.25`. An `IN` subquery with a `BETWEEN`
+on a NaN-holding column returned nothing where Spark returned 11, because adaptive execution saw
+an empty build side. Neither reproduced on a laptop, including with a NaN as the first row of the
+file, so the cause is unknown.
 
-Adaptive execution had replaced the join with an empty relation, so the subquery side looked empty
-to it. The shrunk data did not reproduce it on a laptop, whether written as one file or several,
-so it is not counted as a bug.
+Spark in interpreted mode raised `NUMERIC_VALUE_OUT_OF_RANGE` on seed 7, New York, on a query that
+compiled Spark answered.
 
+Comet returned a timestamp one hour different from Spark for `CAST(date AS TIMESTAMP)` after year
+9999 in New York. It has not been replayed or checked against the time zone rules.

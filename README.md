@@ -18,6 +18,7 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 
 | Engine | Finding | Effect | Upstream status |
 |---|---|---|---|
+| Comet | `WHERE nullif(TRUE, b)` when `b` is NULL | Silently drops the row, though the same expression selected as a column returns `true`. `stddev_pop` over the filter returned 0.0 where Spark returned 3.5 | No report found |
 | Velox | `lpad` and `rpad` with an empty padding string | The whole query fails where Spark returns a value | No report found |
 | Velox | `upper` and `initcap` on `ß` | Returns `ẞ` where Spark returns `SS`, so a group or join on the result differs | No report found |
 | Velox | `round(double, 0)` changes large values, and the largest double becomes `Infinity` | A filter on the rounded value dropped 4 of 5 rows | Known in part: [velox#19422](https://github.com/facebookincubator/velox/pull/19422) is open |
@@ -39,16 +40,23 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 | Seed 3, UTC, GitHub Actions | 537 | 513 / 238 | 465 / 221 | 0, 2, 29 |
 | Seed 4, UTC, GitHub Actions | 549 | 508 / 215 | 467 / 201 | 0, 1, 18 |
 | Seed 5, UTC, GitHub Actions | 539 | 510 / 223 | 463 / 205 | 2, 3, 25 |
-| Total | 2,608 | 2,465 / 1,102 | 2,246 / 1,027 | 2, 7, 96 |
+| Seed 5, UTC, Actions, fixed generator | 537 | 508 / 222 | 461 / 204 | 0, 3, 24 |
+| Seed 8, UTC, Actions, fixed generator | 535 | 498 / 196 | 460 / 183 | 0, 1, 9 |
+| Seed 9, UTC, Actions, fixed generator | 536 | 502 / 218 | 453 / 204 | 0, 1, 10 |
+| Seed 6, New York, Actions, fixed generator | 540 | 500 / 207 | 450 / 196 | 0, 1, 19 |
+| Seed 7, New York, Actions, fixed generator | 521 | 481 / 210 | 451 / 188 | 1, 4, 21 |
+| Total | 5,277 | 4,954 / 2,155 | 4,521 / 2,002 | 3, 17, 179 |
 
-The 2 control differences on seed 5 were a generator mistake: a `SUM` of decimals near the type's
-limit overflows or not depending on row order. Arguments to decimal sums and averages are now
-bounded, as double aggregates already were.
+The 2 control differences on the first seed 5 run were a generator mistake: a `SUM` of decimals
+near the type's limit overflows or not depending on row order. Arguments to decimal sums and
+averages are now bounded, as double aggregates already were, and the rerun of that seed was clean.
+The 1 control difference on seed 7 is unexplained: Spark in interpreted mode raised a decimal range
+error on a query that compiled Spark answered.
 
 Spark rejected the other generated queries, which says nothing about any engine. A difference is
 counted each time a query shows one, so the counts reduce to the causes above. Reports that did
-not reproduce on replay are not claimed as bugs. One such report remains open: on GitHub Actions a
-Velox `IN` subquery returned no rows where Spark returned 11, and it did not reproduce on a laptop.
+not reproduce on replay are not claimed as bugs, and [FINDINGS.md](FINDINGS.md) lists the ones
+still open.
 
 A clean result shows only that these queries found no difference. Less than half of them ran
 fully natively on either engine, and the rest mixed native and JVM operators.
