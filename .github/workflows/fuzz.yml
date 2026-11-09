@@ -42,10 +42,14 @@ jobs:
         if: always()
         run: |
           { echo '```json'; cat runs/fuzz/summary.json || true; echo '```'; ls runs/fuzz/findings || true; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Name the artifact
+        if: always()
+        # Artifact names cannot contain the slash in a zone such as America/New_York.
+        run: echo "ZONE=$(echo '${{ inputs.tz }}' | tr '/' '-')" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fuzz-${{ matrix.seed }}-${{ inputs.tz }}
+          name: fuzz-${{ matrix.seed }}-${{ env.ZONE }}
           path: |
             runs/fuzz/summary.json
             runs/fuzz/unshrunk.txt

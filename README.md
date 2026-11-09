@@ -24,22 +24,31 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 | Velox | `second()` and `date_trunc('MINUTE')` in a time zone with a sub-minute offset | Wrong for historic timestamps, such as New York before 1883 | No report found |
 | Velox | `CAST(date AS STRING)` after year 9999 | Prints `10000-09-30` where Spark prints `+10000-09-30` | No report found |
 | Velox | `CAST(double AS STRING)` on the smallest double | Prints `4.9406564584124654E-324` where Spark prints `4.9E-324` | No report found |
-| Velox and Comet | `cbrt` differs from Spark in the last bits | Velox returns `3.0000000000000004` for `cbrt(27.0)`. Comet differs by one bit on `cbrt(2.5)`, visible through `hash` | Comet: known, [comet#6797](https://github.com/apache/datafusion-comet/issues/6797) |
-
-Across all three runs below, Comet's only difference was the `cbrt` one.
+| Velox | `power(1.0, Infinity)` | Returns `1.0` where Spark returns `NaN`, so a filter on it keeps extra rows | No report found |
+| Velox | `round(x, NULL)` | Rounds as if the scale were 0 where Spark returns null | No report found |
+| Velox | `CAST(double AS DECIMAL)` on large values | Returns `-9223372036854775808` where Spark returns `-9223372036854776000` | No report found |
+| Comet | `lpad` with a NULL padding value | The whole query fails where Spark returns a value | Related open work: [comet#7450](https://github.com/apache/datafusion-comet/pull/7450), [comet#7452](https://github.com/apache/datafusion-comet/issues/7452) |
+| Velox and Comet | Math functions such as `cbrt` differ from Spark in the last bits | Velox returns `3.0000000000000004` for `cbrt(27.0)`. Comet differs by one bit on `cbrt(2.5)`. Later steps such as `hash`, `%` or `cos` turn that into a visibly different answer | Comet: known, [comet#6797](https://github.com/apache/datafusion-comet/issues/6797) |
+| Spark | `LIKE` with a non-literal pattern containing an emoji | `'🦀' LIKE p` is false where `p` is `'🦀'`. Comet and Velox are correct | Fix proposed upstream as SPARK-55453; Spark 4.0.2 still shows it |
 
 | Run | Queries compared | Comet: any native / fully native | Velox: any native / fully native | Differences: control, Comet, Velox |
 |---|---|---|---|---|
-| Seed 1, UTC | 86 | 83 / 45 | 75 / 44 | 0, 0, 1 |
-| Seed 2, UTC | 536 | 506 / 216 | 456 / 200 | 0, 0, 5 |
-| Seed 3, America/New_York | 361 | 345 / 165 | 320 / 156 | 0, 1, 18 |
-| Total | 983 | 934 / 426 | 851 / 400 | 0, 1, 24 |
+| Seed 1, UTC, laptop | 86 | 83 / 45 | 75 / 44 | 0, 0, 1 |
+| Seed 2, UTC, laptop | 536 | 506 / 216 | 456 / 200 | 0, 0, 5 |
+| Seed 3, New York, laptop | 361 | 345 / 165 | 320 / 156 | 0, 1, 18 |
+| Seed 3, UTC, GitHub Actions | 537 | 513 / 238 | 465 / 221 | 0, 2, 29 |
+| Seed 4, UTC, GitHub Actions | 549 | 508 / 215 | 467 / 201 | 0, 1, 18 |
+| Seed 5, UTC, GitHub Actions | 539 | 510 / 223 | 463 / 205 | 2, 3, 25 |
+| Total | 2,608 | 2,465 / 1,102 | 2,246 / 1,027 | 2, 7, 96 |
 
-Spark itself rejected the other queries in each run, which says nothing about any engine. A
-difference is counted each time a query shows one, so the 24 from Velox reduce to the seven
-causes above that involve Velox, along with one more that did not reproduce on replay and is not
-claimed as a bug.
-Seed 2 took 27 minutes on a 4-core laptop.
+The 2 control differences on seed 5 were a generator mistake: a `SUM` of decimals near the type's
+limit overflows or not depending on row order. Arguments to decimal sums and averages are now
+bounded, as double aggregates already were.
+
+Spark rejected the other generated queries, which says nothing about any engine. A difference is
+counted each time a query shows one, so the counts reduce to the causes above. Reports that did
+not reproduce on replay are not claimed as bugs. One such report remains open: on GitHub Actions a
+Velox `IN` subquery returned no rows where Spark returned 11, and it did not reproduce on a laptop.
 
 A clean result shows only that these queries found no difference. Less than half of them ran
 fully natively on either engine, and the rest mixed native and JVM operators.
@@ -119,8 +128,9 @@ generates the same data and queries.
 
 ## Limits
 
-- Spark is the reference, so a bug shared by Spark and the native engine is invisible. Each
-  finding in [FINDINGS.md](FINDINGS.md) was checked against Spark's documented behaviour or source.
+- Spark is the reference, so a bug shared by Spark and the native engine is invisible, and a Spark
+  bug looks like a native one until someone checks. The `LIKE` finding above is one such case. Each
+  finding in [FINDINGS.md](FINDINGS.md) was checked against the expected semantics or Spark's source.
 - ANSI mode is off, because Gluten 1.7 documents it as unsupported on Spark 4.0.
 - Generated queries use scalar types only. Arrays, maps and structs are not covered.
 - Tables hold a few hundred rows. That exercises semantics, but not spilling or memory pressure.

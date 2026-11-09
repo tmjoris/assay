@@ -117,3 +117,73 @@ These differences pass the 1e-9 double tolerance, and Assay caught them because 
 turns a one-bit difference into a different integer. Comet tracks this class of difference in
 [comet#6797](https://github.com/apache/datafusion-comet/issues/6797). It matters only when an exact
 value is compared or hashed.
+
+## Comet: `lpad` fails on a NULL padding value
+
+Reproduction: [comet-lpad-null-pad.sql](findings/comet-lpad-null-pad.sql)
+
+The join leaves the padding column NULL, which reaches Comet as a NULL constant:
+
+```
+Unsupported arguments [Array(StringArray ...), Array(PrimitiveArray<Int32> ...), Scalar(Utf8(NULL))]
+for function rpad/lpad/read_side_padding.
+```
+
+Spark returns NULL from `lpad`, so the query succeeds, and Velox matches it. Comet has open work
+on neighbouring cases of this function, [comet#7450](https://github.com/apache/datafusion-comet/pull/7450)
+and [comet#7452](https://github.com/apache/datafusion-comet/issues/7452). Whether they cover a NULL
+pad is not established here.
+
+## Velox: `power(1.0, Infinity)`
+
+Reproduction: [velox-power-infinity.sql](findings/velox-power-infinity.sql)
+
+Java defines `pow` as NaN when the absolute value of the base is 1 and the exponent is infinite,
+and Spark follows it. C's `pow` returns 1, which is what Velox returns. A filter
+`d <=> power(d, CAST('Infinity' AS DOUBLE))` keeps a row on Velox that Spark excludes.
+
+## Velox: `round(x, NULL)` ignores the NULL
+
+Reproduction: [velox-round-null-scale.sql](findings/velox-round-null-scale.sql)
+
+`round(-0.0001, NULL)` is NULL on Spark and Comet, and `0.0000` on Velox. A NULL scale is unusual
+in hand-written SQL, so its impact is low.
+
+## Velox: `CAST(double AS DECIMAL)` on large values
+
+Reproduction: [velox-cast-double-decimal.sql](findings/velox-cast-double-decimal.sql)
+
+For the double nearest `-2^63`, Spark and Comet return `-9223372036854776000.0000000000` and Velox
+returns `-9223372036854775808.0000000000`. Spark converts through the double's shortest decimal
+text, while Velox keeps its exact binary value. Velox is numerically closer, but the answers
+differ, and a comparison against the original column changes which rows pass.
+
+## Spark: `LIKE` with supplementary characters
+
+Reproduction: [spark-like-supplementary.sql](findings/spark-like-supplementary.sql)
+
+This one is a Spark bug that Assay first reported as a Comet difference. For a non-literal pattern
+such as `s LIKE p`:
+
+| `s` | `p` | Spark 4.0.2 | Comet and Velox |
+|---|---|---|---|
+| `🦀` | `🦀` | false | true |
+| `a🦀b` | `a🦀b` | false | true |
+| `a🦀` | `a🦀%` | false | true |
+
+`StringUtils.escapeLikeRegex` walks the pattern one UTF-16 unit at a time and quotes each unit
+alone, which splits an emoji's surrogate pair. A fix was proposed upstream as SPARK-55453.
+
+## Not confirmed
+
+On GitHub Actions, seed 3, this query returned no rows on Velox where Spark returned 11:
+
+```sql
+SELECT a0.b FROM t0 a0
+WHERE a0.m IN (SELECT a1.m FROM t3 a1 WHERE a1.d BETWEEN CAST(2.5 AS DOUBLE) AND a1.d)
+```
+
+Adaptive execution had replaced the join with an empty relation, so the subquery side looked empty
+to it. The shrunk data did not reproduce it on a laptop, whether written as one file or several,
+so it is not counted as a bug.
+

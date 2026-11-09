@@ -33,6 +33,12 @@ public final class Catalog {
      */
     private static final String BOUNDED = "CASE WHEN abs({0}) < 1000000.0 THEN {0} END";
 
+    /**
+     * The same for decimals. A sum near the type's limit overflows to null or not depending on
+     * which rows have been added so far, so the order rows arrive in decides the answer.
+     */
+    private static final String BOUNDED_DECIMAL = "CASE WHEN abs({0}) < 1000000000 THEN {0} END";
+
     private static final List<Template> ALL = build();
     private static final Map<SqlType, List<Template>> SCALARS =
             ALL.stream()
@@ -213,11 +219,11 @@ public final class Catalog {
         t.add(a("sum({0})", BIGINT, BIGINT));
         t.add(a("sum(" + BOUNDED + ")", DOUBLE, DOUBLE));
         t.add(a("sum(DISTINCT {0})", BIGINT, BIGINT));
-        t.add(a("CAST(sum({0}) AS " + DEC38.sql() + ")", DEC38, DEC18));
-        t.add(a("CAST(sum({0}) AS " + DEC38.sql() + ")", DEC38, DEC38));
+        t.add(a("CAST(sum(" + BOUNDED_DECIMAL + ") AS " + DEC38.sql() + ")", DEC38, DEC18));
+        t.add(a("CAST(sum(" + BOUNDED_DECIMAL + ") AS " + DEC38.sql() + ")", DEC38, DEC38));
         t.add(a("avg({0})", DOUBLE, BIGINT));
         t.add(a("avg(" + BOUNDED + ")", DOUBLE, DOUBLE));
-        t.add(a("CAST(avg({0}) AS " + DEC38.sql() + ")", DEC38, DEC18));
+        t.add(a("CAST(avg(" + BOUNDED_DECIMAL + ") AS " + DEC38.sql() + ")", DEC38, DEC18));
         t.add(a("stddev_pop(" + BOUNDED + ")", DOUBLE, DOUBLE));
         t.add(a("var_samp(" + BOUNDED + ")", DOUBLE, DOUBLE));
         t.add(a("bool_and({0})", BOOLEAN, BOOLEAN));

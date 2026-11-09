@@ -301,9 +301,12 @@ final class Fuzzer {
         for (Map.Entry<String, List<Long>> e : kept.entrySet()) {
             b.append("CREATE TABLE ").append(ns).append(".").append(e.getKey());
             b.append(" (").append(DataGen.columnsDdl()).append(") USING iceberg;\n");
-            for (long rid : e.getValue()) {
+            // One statement, because the copy that failed was written in one commit and file
+            // layout can decide whether a bug shows up.
+            if (!e.getValue().isEmpty()) {
+                List<String> tuples = e.getValue().stream().map(data.rows(e.getKey())::get).toList();
                 b.append("INSERT INTO ").append(ns).append(".").append(e.getKey());
-                b.append(" VALUES ").append(data.rows(e.getKey()).get(rid)).append(";\n");
+                b.append(" VALUES ").append(String.join(", ", tuples)).append(";\n");
             }
         }
         b.append(sql).append(";\n");

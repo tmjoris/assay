@@ -1,0 +1,6 @@
+-- Run on a Spark catalog named `assay`.
+CREATE NAMESPACE IF NOT EXISTS assay.repro;
+CREATE TABLE assay.repro.t1 (rid BIGINT, k INT, l BIGINT, d DOUBLE, m DECIMAL(18,4), w DECIMAL(38,10), s STRING, dt DATE, ts TIMESTAMP, b BOOLEAN) USING iceberg;
+INSERT INTO assay.repro.t1 VALUES (200, 8, CAST(4 AS BIGINT), CAST(6.75 AS DOUBLE), CAST(7.25000 AS DECIMAL(18,4)), CAST(5.25000000000 AS DECIMAL(38,10)), 'e', DATE '2024-01-08', TIMESTAMP '2000-02-29 12:34:56.789012', FALSE);
+CREATE TABLE assay.repro.t0 (rid BIGINT, k INT, l BIGINT, d DOUBLE, m DECIMAL(18,4), w DECIMAL(38,10), s STRING, dt DATE, ts TIMESTAMP, b BOOLEAN) USING iceberg;
+SELECT if((lpad(a0.s, pmod(a0.k, 20), a1.s) = 'a'), DATE '2024-01-01', a0.dt) AS c1 FROM assay.repro.t1 a0 LEFT JOIN assay.repro.t0 a1 ON (hex(CAST(0 AS BIGINT)) BETWEEN 'a' AND a1.s);
