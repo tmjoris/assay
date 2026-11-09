@@ -43,7 +43,7 @@ Spark's `UTF8String.lpad` handles this case on purpose: when `pad.numBytes() == 
 Velox `main` when this was written. The result is a failed job caused by one row's value, since
 any empty string in a pad column is enough.
 
-A search of Velox and Gluten issues found no report of it. A search can miss one.
+Reported as [velox#20207](https://github.com/facebookincubator/velox/issues/20207).
 
 The check may be correct for Presto, which shares the helper, so a fix belongs in the Spark
 function rather than the helper.
@@ -92,7 +92,8 @@ Reproduction: [velox-upper-sharp-s.sql](findings/velox-upper-sharp-s.sql)
 
 Spark's result comes from Java's full case mapping, which expands `ß` to two letters. Velox maps
 it to the single capital letter `ẞ` (U+1E9E). On German text, anything grouped, joined or filtered
-on `upper(name)` gets a different answer. A search of Velox issues found no report of it.
+on `upper(name)` gets a different answer. Reported as
+[velox#20208](https://github.com/facebookincubator/velox/issues/20208).
 
 ## Velox: `second` and `date_trunc` with sub-minute zone offsets
 

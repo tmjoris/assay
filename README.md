@@ -45,7 +45,7 @@ all and fails if a recorded bug stops reproducing.
 
 `spark-interpreted` is a control: Spark checked against itself, which catches mistakes in the
 generator. The same seed generates the same queries and data. Each lane in `--parallel` runs its
-own set of JVMs, so memory is the limit.
+own set of JVMs, so memory is the limit. Add `--tz ZONE` to run in another session time zone.
 
 ![A fuzz run](docs/images/fuzz.png)
 
@@ -64,8 +64,8 @@ Details and reproductions are in [FINDINGS.md](FINDINGS.md).
 |---|---|---|---|
 | Velox | Filtering a double column in a Parquet file that also holds NaN | Loses every row in the row group: `d > 0.0` returned nothing where the file holds `5.25` | No report found |
 | Comet | `WHERE nullif(TRUE, b)` when `b` is NULL | Silently drops the row, though the same expression selected as a column returns `true`. `stddev_pop` over the filter returned 0.0 where Spark returned 3.5 | No report found |
-| Velox | `lpad` and `rpad` with an empty padding string | The whole query fails where Spark returns a value | No report found |
-| Velox | `upper` and `initcap` on `ß` | Returns `ẞ` where Spark returns `SS`, so a group or join on the result differs | No report found |
+| Velox | `lpad` and `rpad` with an empty padding string | The whole query fails where Spark returns a value | Reported: [velox#20207](https://github.com/facebookincubator/velox/issues/20207) |
+| Velox | `upper` and `initcap` on `ß` | Returns `ẞ` where Spark returns `SS`, so a group or join on the result differs | Reported: [velox#20208](https://github.com/facebookincubator/velox/issues/20208) |
 | Velox | `round(double, 0)` changes large values, and the largest double becomes `Infinity` | A filter on the rounded value dropped 4 of 5 rows | Known in part: [velox#19422](https://github.com/facebookincubator/velox/pull/19422) is open |
 | Velox | `second()` and `date_trunc('MINUTE')` in a time zone with a sub-minute offset | Wrong for historic timestamps, such as New York before 1883 | No report found |
 | Velox | `CAST(date AS STRING)` after year 9999 | Prints `10000-09-30` where Spark prints `+10000-09-30` | No report found |
@@ -160,27 +160,6 @@ adaptive execution off, runs as a control: a difference there points at the gene
 Spark. Assay also reads each final physical plan and counts native operators, so a query that
 quietly fell back to the JVM cannot pass as evidence for a native engine. The plan has to be read
 after execution, since Gluten rewrites plans inside adaptive execution.
-
-## Running it
-
-You need Java 21. The build fetches everything else, and checks the Gluten download against its
-release checksum.
-
-```sh
-./gradlew build
-
-# Fuzz all engines. Output goes to runs/first, which must not exist yet.
-./gradlew :assay-cli:run --args="--out runs/first --seed 1 --queries 200 --engines spark-interpreted,comet,velox"
-
-# Replay a reproduction on each engine, side by side.
-./gradlew :assay-cli:run --args="check --out runs/replay --file findings/velox-lpad-empty-pad.sql"
-
-# Add --tz ZONE to either command to run in another session time zone.
-```
-
-Each finding gets a directory under `runs/<name>/findings` holding `report.md`, `repro.sql` and
-the Arrow results from both engines. `summary.json` has the counts for the run. The same seed
-generates the same data and queries.
 
 ## Limits
 
