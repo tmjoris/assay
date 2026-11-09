@@ -38,6 +38,8 @@ final class Oracle {
 
     private final EngineProcess reference;
     private final Path scratch;
+    private String lastSql;
+    private Reply lastReply;
 
     Oracle(EngineProcess reference, Path scratch) {
         this.reference = reference;
@@ -47,7 +49,7 @@ final class Oracle {
     Verdict check(EngineProcess tested, String sql, boolean ordered) {
         try {
             Path expectedFile = scratch.resolve("reference.arrow");
-            Reply expected = reference.run(sql, expectedFile, TIMEOUT);
+            Reply expected = referenceReply(sql, expectedFile);
             if (!expected.ok()) {
                 return new Verdict(null, false, expected.error(), expected, null);
             }
@@ -62,6 +64,15 @@ final class Oracle {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** Each query goes to every engine in turn, so only the first needs a fresh reference run. */
+    private Reply referenceReply(String sql, Path file) throws IOException {
+        if (!sql.equals(lastSql)) {
+            lastReply = reference.run(sql, file, TIMEOUT);
+            lastSql = sql;
+        }
+        return lastReply;
     }
 
     private static Verdict compare(Path expectedFile, Path actualFile, boolean ordered, Reply expected, Reply actual)

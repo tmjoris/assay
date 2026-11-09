@@ -13,7 +13,8 @@ public final class Main {
 
     private static final String USAGE =
             """
-            usage: assay --out DIR [--seed N] [--queries N] [--rows N] [--engines a,b]
+            usage: assay check --out DIR --file SCRIPT.sql [--engines a,b] [--tz ZONE]
+                   assay --out DIR [--seed N] [--queries N] [--rows N] [--engines a,b]
                          [--tz ZONE] [--shrink-budget N] [--max-shrinks N]
                          [--classpaths DIR]
             """;
@@ -21,7 +22,8 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws IOException {
-        Map<String, String> opts = parse(args);
+        boolean check = args.length > 0 && args[0].equals("check");
+        Map<String, String> opts = parse(check ? Arrays.copyOfRange(args, 1, args.length) : args);
         if (!opts.containsKey("out")) {
             System.err.print(USAGE);
             System.exit(2);
@@ -33,6 +35,11 @@ public final class Main {
         }
         Files.createDirectories(out);
         List<String> engines = Arrays.asList(opts.getOrDefault("engines", "comet,velox").split(","));
+        Path classpaths = Path.of(opts.getOrDefault("classpaths", "assay-worker/build/classpaths"));
+        if (check) {
+            Check.run(Path.of(opts.get("file")), engines, out, classpaths, opts.getOrDefault("tz", "UTC"));
+            return;
+        }
         new Fuzzer(
                         new Fuzzer.Config(
                                 Long.parseLong(opts.getOrDefault("seed", "1")),
@@ -40,7 +47,7 @@ public final class Main {
                                 Integer.parseInt(opts.getOrDefault("rows", "200")),
                                 engines,
                                 out,
-                                Path.of(opts.getOrDefault("classpaths", "assay-worker/build/classpaths")),
+                                classpaths,
                                 opts.getOrDefault("tz", "UTC"),
                                 Integer.parseInt(opts.getOrDefault("shrink-budget", "200")),
                                 Integer.parseInt(opts.getOrDefault("max-shrinks", "30"))))
