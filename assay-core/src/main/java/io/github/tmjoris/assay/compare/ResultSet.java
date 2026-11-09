@@ -19,6 +19,10 @@ public record ResultSet(List<String> types, List<List<Object>> rows) {
 
     public static final String TYPE_METADATA = "spark_type";
 
+    private static Object plain(Object value) {
+        return value instanceof Text t ? t.toString() : value;
+    }
+
     public static ResultSet read(Path file) throws IOException {
         try (BufferAllocator allocator = new RootAllocator();
                 FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
@@ -33,8 +37,7 @@ public record ResultSet(List<String> types, List<List<Object>> rows) {
                 for (int i = 0; i < root.getRowCount(); i++) {
                     List<Object> row = new ArrayList<>(root.getFieldVectors().size());
                     for (FieldVector v : root.getFieldVectors()) {
-                        Object value = v.getObject(i);
-                        row.add(value instanceof Text t ? t.toString() : value);
+                        row.add(plain(v.getObject(i)));
                     }
                     rows.add(row);
                 }
